@@ -1,0 +1,289 @@
+<!DOCTYPE html>
+<html>
+
+<head>
+<title>AI Gesture Music Controller</title>
+<meta charset="UTF-8">
+
+<script src="https://cdn.jsdelivr.net/npm/@tensorflow/tfjs@latest/dist/tf.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/@teachablemachine/image@latest/dist/teachablemachine-image.min.js"></script>
+
+<style>
+
+body{
+background:#121212;
+color:white;
+font-family:Arial;
+text-align:center;
+}
+
+h1{
+margin-top:20px;
+}
+
+button{
+padding:12px 20px;
+font-size:16px;
+background:#00bcd4;
+border:none;
+border-radius:6px;
+cursor:pointer;
+}
+
+#webcam-container{
+margin-top:20px;
+}
+
+#label-container{
+margin-top:20px;
+font-size:22px;
+font-weight:bold;
+color:#00ffcc;
+}
+
+#volumeBar{
+width:300px;
+height:20px;
+}
+
+#confidence{
+width:300px;
+}
+
+</style>
+</head>
+
+
+<body>
+
+<h1>AI Gesture Music Controller 🎵</h1>
+
+<button onclick="init()">Start Camera</button>
+
+<br><br>
+
+<input type="file" id="songSelector" accept="audio/*">
+
+<br><br>
+
+<audio id="audioPlayer" controls></audio>
+
+<p>Volume : <span id="vol">0.50</span></p>
+
+<progress id="volumeBar" value="0.5" max="1"></progress>
+
+<br><br>
+
+<p>Gesture Confidence</p>
+<progress id="confidence" value="0" max="1"></progress>
+
+<div id="webcam-container"></div>
+
+<div id="label-container">Waiting for gesture...</div>
+
+<script>
+
+const MODEL_URL = "https://teachablemachine.withgoogle.com/models/foR1hW9Ip/";
+
+let model, webcam;
+
+let audio = document.getElementById("audioPlayer");
+let fileInput = document.getElementById("songSelector");
+
+let volDisplay = document.getElementById("vol");
+let volumeBar = document.getElementById("volumeBar");
+let confidenceBar = document.getElementById("confidence");
+
+let labelContainer = document.getElementById("label-container");
+
+let lastGesture = "";
+let gestureCount = 0;
+let lastAction = 0;
+
+audio.volume = 0.5;
+
+fileInput.addEventListener("change", function(){
+
+const file = this.files[0];
+
+if(file){
+
+const url = URL.createObjectURL(file);
+
+audio.src = url;
+
+audio.play().catch(()=>{});
+
+}
+
+});
+
+
+async function init(){
+
+const modelURL = MODEL_URL + "model.json";
+const metadataURL = MODEL_URL + "metadata.json";
+
+model = await tmImage.load(modelURL, metadataURL);
+
+const flip = true;
+
+webcam = new tmImage.Webcam(250,250,flip);
+
+await webcam.setup();
+await webcam.play();
+
+document.getElementById("webcam-container").appendChild(webcam.canvas);
+
+window.requestAnimationFrame(loop);
+
+}
+
+
+async function loop(){
+
+webcam.update();
+await predict();
+
+window.requestAnimationFrame(loop);
+
+}
+
+
+async function predict(){
+
+const prediction = await model.predict(webcam.canvas);
+
+let highest = prediction.reduce((a,b)=>
+a.probability>b.probability?a:b
+);
+
+labelContainer.innerHTML =
+highest.className + " : " + highest.probability.toFixed(2);
+
+confidenceBar.value = highest.probability;
+
+
+if(highest.className === lastGesture){
+
+gestureCount++;
+
+}else{
+
+gestureCount = 0;
+
+}
+
+lastGesture = highest.className;
+
+
+if(gestureCount > 5 && highest.probability > 0.92){
+
+if(Date.now() - lastAction > 1500){
+
+handleGesture(highest.className);
+
+lastAction = Date.now();
+
+}
+
+gestureCount = 0;
+
+}
+
+}
+
+
+function handleGesture(gesture){
+
+switch(gesture){
+
+case "Volume Up":
+
+audio.volume = Math.min(1 , audio.volume + 0.1);
+showAction("🔊 Volume Up");
+
+break;
+
+
+case "Volume Down":
+
+audio.volume = Math.max(0 , audio.volume - 0.1);
+showAction("🔉 Volume Down");
+
+break;
+
+
+case "Play":
+
+audio.play().catch(()=>{});
+showAction("▶ Playing");
+
+break;
+
+
+case "Pause":
+
+audio.pause();
+showAction("⏸ Paused");
+
+break;
+
+
+case "Mute":
+
+audio.volume = 0;
+showAction("🔇 Muted");
+
+break;
+
+
+case "Unmute":
+
+audio.volume = 0.5;
+showAction("🔈 Unmuted");
+
+break;
+
+
+case "Next":
+
+audio.currentTime = Math.min(audio.duration , audio.currentTime + 10);
+showAction("⏭ Skip Forward");
+
+break;
+
+
+case "Previous":
+
+audio.currentTime = Math.max(0 , audio.currentTime - 10);
+showAction("⏮ Skip Back");
+
+break;
+
+}
+
+updateVolume();
+
+}
+
+
+function updateVolume(){
+
+volDisplay.innerText = audio.volume.toFixed(2);
+volumeBar.value = audio.volume;
+
+}
+
+
+function showAction(text){
+
+labelContainer.innerHTML = "<h2>"+text+"</h2>";
+
+}
+
+</script>
+
+</body>
+
+</html>
